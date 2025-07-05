@@ -9,7 +9,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS setup (so web or mobile can call it)
+# CORS setup (allow any origin)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,14 +18,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Set up the new OpenAI client
+# ✅ OpenAI client setup
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Define expected body format
+# 👇 Add this route to fix "Not Found"
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the ChatBot API"}
+
+# Input model
 class ChatRequest(BaseModel):
     message: str
     lang: str = "en"
 
+# Chat endpoint
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     system_prompt = {
@@ -33,7 +39,6 @@ async def chat_endpoint(request: ChatRequest):
         "ar": "أنت مساعد ذكي تجيب باللغة العربية فقط."
     }.get(request.lang, "You are a helpful assistant.")
 
-    # ✅ New API call syntax for openai>=1.0.0
     chat_completion = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -46,6 +51,7 @@ async def chat_endpoint(request: ChatRequest):
         "response": chat_completion.choices[0].message.content
     }
 
+# Start server
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
