@@ -45,3 +45,8 @@ async def chat_endpoint(request: ChatRequest):
     return {
         "response": chat_completion.choices[0].message.content
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
