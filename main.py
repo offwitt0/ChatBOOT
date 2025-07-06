@@ -32,10 +32,12 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     system_prompt = (
-        "You are a helpful assistant that only answers questions related to hotel bookings, vacation planning, "
-        "and travel accommodations. If the user's question is unrelated to that (e.g., general knowledge, tech, etc), "
-        "respond with: ❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries."
+        "You are a travel assistant specialized in hotel bookings and vacation planning. "
+        "Answer questions related to booking hotels, vacation destinations, accommodations, travel tips, etc. "
+        "If the question is clearly unrelated to travel or hotel bookings, politely respond with: "
+        "'❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.'"
     )
+
 
     chat_completion = client.chat.completions.create(
         model="gpt-4o",
