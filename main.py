@@ -1,14 +1,19 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import openai
 import os
 from dotenv import load_dotenv
+from uuid import uuid4
 
 load_dotenv()
 
 app = FastAPI()
 
+# In-memory store of session conversations
+chat_sessions = {}
+
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,40 +28,51 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 async def root():
     return {"message": "Welcome to the ChatBot API"}
 
+# Request format
 class ChatRequest(BaseModel):
     message: str
     lang: str = "en"
+    session_id: str = None  # Optional
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    # System prompt to constrain assistant to hotel booking only
-    system_prompt = """
-    You are a vacation assistant. ONLY answer questions about booking hotels or vacation stays.
-    If the user asks for a location, date, or preference, suggest an Airbnb link like:
-    https://www.airbnb.com/s/{city}/homes?checkin={checkin}&checkout={checkout}
+    # Session tracking
+    session_id = request.session_id or str(uuid4())
+    if session_id not in chat_sessions:
+        chat_sessions[session_id] = []
 
-    Example:
-    User: I want a hotel in Paris from July 12 to July 14
-    You: Sure! Here's a link to browse stays in Paris from July 12 to July 14:
-    https://www.airbnb.com/s/Paris--France/homes?checkin=2025-07-12&checkout=2025-07-14
+    # Add user message to history
+    chat_sessions[session_id].append({"role": "user", "content": request.message})
 
-    ❌ If the question is NOT about vacation or hotel booking, respond with:
-    "❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries."
-    """
+    # System prompt
+    system_prompt = {
+        "role": "system",
+        "content": """
+        You are a vacation assistant. ONLY answer questions about booking hotels or vacation stays.
+        If the question is not about travel or hotel booking, respond with:
+        ❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.
 
-    chat_completion = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": request.message},
-        ]
-    )
-
-    return {
-        "response": chat_completion.choices[0].message.content
+        If the user mentions a city and dates, respond with:
+        ✅ Sure! Here's a link:
+        https://www.airbnb.com/s/{city}/homes?checkin={checkin}&checkout={checkout}
+        """
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    # Include system prompt once
+    messages = [system_prompt] + chat_sessions[session_id]
+
+    # Call OpenAI API
+    try:
+        chat_completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+        )
+        reply = chat_completion.choices[0].message.content
+
+        # Add assistant reply to history
+        chat_sessions[session_id].append({"role": "assistant", "content": reply})
+
+        return {"response": reply, "session_id": session_id}
+
+    except Exception as e:
+        return {"response": f"❌ Error: {str(e)}", "session_id": session_id}
