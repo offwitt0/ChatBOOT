@@ -1,16 +1,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from uuid import UUID
 import openai
 import os
 from dotenv import load_dotenv
+from uuid import UUID
 
 load_dotenv()
 
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,14 +20,13 @@ app.add_middleware(
 
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 👇 In-memory conversation memory (simple demo version)
+# 🧠 Session memory store
 session_memory = {}
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to the ChatBot API"}
 
-# 🔄 Data model
 class ChatRequest(BaseModel):
     message: str
     lang: str = "en"
@@ -36,39 +34,41 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    # ❌ Reject unrelated questions
-    keywords = ["hotel", "vacation", "stay", "book", "airbnb"]
-    if not any(word in request.message.lower() for word in keywords):
+    # Check if session exists, if not, create it
+    if request.session_id not in session_memory:
+        session_memory[request.session_id] = [
+            {
+                "role": "system",
+                "content": """You are a vacation assistant. ONLY answer questions about booking hotels or vacation stays.
+If the user asks for a location, date, or preference, suggest an Airbnb link like:
+https://www.airbnb.com/s/{city}/homes?checkin={checkin}&checkout={checkout}
+
+If the user asks something unrelated (e.g., capital of a country), respond:
+❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries."""
+            }
+        ]
+
+    session_messages = session_memory[request.session_id]
+    session_messages.append({"role": "user", "content": request.message})
+
+    try:
+        chat_completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=session_messages
+        )
+        reply = chat_completion.choices[0].message.content
+
+        # Save assistant reply to memory
+        session_messages.append({"role": "assistant", "content": reply})
+
         return {
-            "response": "❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.",
+            "response": reply,
             "session_id": str(request.session_id)
         }
 
-    # 🔁 Get session memory or start fresh
-    history = session_memory.get(str(request.session_id), [])
-
-    # 🔧 Build full message history
-    messages = [
-        {"role": "system", "content": "You are a hotel booking assistant. You ONLY answer vacation-related hotel booking questions. If user asks about destinations and dates, offer an Airbnb link."}
-    ] + history + [
-        {"role": "user", "content": request.message}
-    ]
-
-    # 💬 Generate response
-    chat_completion = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages
-    )
-
-    reply = chat_completion.choices[0].message.content
-
-    # 🧠 Save interaction to memory
-    session_memory[str(request.session_id)] = history + [
-        {"role": "user", "content": request.message},
-        {"role": "assistant", "content": reply}
-    ]
-
-    return {
-        "response": reply,
-        "session_id": str(request.session_id)
-    }
+    except Exception as e:
+        return {
+            "response": "❌ An error occurred while processing your request.",
+            "error": str(e),
+            "session_id": str(request.session_id)
+        }
