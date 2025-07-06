@@ -1,19 +1,16 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from uuid import UUID
 import openai
 import os
 from dotenv import load_dotenv
-from uuid import uuid4
 
 load_dotenv()
 
 app = FastAPI()
 
-# In-memory store of session conversations
-chat_sessions = {}
-
-# CORS setup
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,55 +21,54 @@ app.add_middleware(
 
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# 👇 In-memory conversation memory (simple demo version)
+session_memory = {}
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to the ChatBot API"}
 
-# Request format
+# 🔄 Data model
 class ChatRequest(BaseModel):
     message: str
     lang: str = "en"
-    session_id: str = None  # Optional
+    session_id: UUID
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    # Session tracking
-    session_id = request.session_id or str(uuid4())
-    if session_id not in chat_sessions:
-        chat_sessions[session_id] = []
+    # ❌ Reject unrelated questions
+    keywords = ["hotel", "vacation", "stay", "book", "airbnb"]
+    if not any(word in request.message.lower() for word in keywords):
+        return {
+            "response": "❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.",
+            "session_id": str(request.session_id)
+        }
 
-    # Add user message to history
-    chat_sessions[session_id].append({"role": "user", "content": request.message})
+    # 🔁 Get session memory or start fresh
+    history = session_memory.get(str(request.session_id), [])
 
-    # System prompt
-    system_prompt = {
-        "role": "system",
-        "content": """
-        You are a vacation assistant. ONLY answer questions about booking hotels or vacation stays.
-        If the question is not about travel or hotel booking, respond with:
-        ❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.
+    # 🔧 Build full message history
+    messages = [
+        {"role": "system", "content": "You are a hotel booking assistant. You ONLY answer vacation-related hotel booking questions. If user asks about destinations and dates, offer an Airbnb link."}
+    ] + history + [
+        {"role": "user", "content": request.message}
+    ]
 
-        If the user mentions a city and dates, respond with:
-        ✅ Sure! Here's a link:
-        https://www.airbnb.com/s/{city}/homes?checkin={checkin}&checkout={checkout}
-        """
+    # 💬 Generate response
+    chat_completion = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages
+    )
+
+    reply = chat_completion.choices[0].message.content
+
+    # 🧠 Save interaction to memory
+    session_memory[str(request.session_id)] = history + [
+        {"role": "user", "content": request.message},
+        {"role": "assistant", "content": reply}
+    ]
+
+    return {
+        "response": reply,
+        "session_id": str(request.session_id)
     }
-
-    # Include system prompt once
-    messages = [system_prompt] + chat_sessions[session_id]
-
-    # Call OpenAI API
-    try:
-        chat_completion = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-        )
-        reply = chat_completion.choices[0].message.content
-
-        # Add assistant reply to history
-        chat_sessions[session_id].append({"role": "assistant", "content": reply})
-
-        return {"response": reply, "session_id": session_id}
-
-    except Exception as e:
-        return {"response": f"❌ Error: {str(e)}", "session_id": session_id}
