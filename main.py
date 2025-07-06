@@ -5,12 +5,11 @@ from dotenv import load_dotenv
 import os
 import openai
 
-
 load_dotenv()
 
 app = FastAPI()
 
-# CORS setup (allow any origin)
+# CORS for all origins (mobile + web)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,26 +18,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ OpenAI client setup
+# OpenAI client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 👇 Add this route to fix "Not Found"
 @app.get("/")
 async def root():
     return {"message": "Welcome to the ChatBot API"}
 
-# Input model
 class ChatRequest(BaseModel):
     message: str
     lang: str = "en"
 
-# Chat endpoint
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    system_prompt = {
-        "en": "You are a helpful assistant who replies in English.",
-        "ar": "أنت مساعد ذكي تجيب باللغة العربية فقط."
-    }.get(request.lang, "You are a helpful assistant.")
+    system_prompt = (
+        "You are a helpful assistant that only answers questions about booking hotels for vacations, "
+        "travel planning, and accommodations. "
+        "If someone asks about anything else, reply with: "
+        "'❌ I'm sorry, I can only help with hotel bookings and vacation-related inquiries.'"
+    )
 
     chat_completion = client.chat.completions.create(
         model="gpt-4o",
@@ -52,7 +50,6 @@ async def chat_endpoint(request: ChatRequest):
         "response": chat_completion.choices[0].message.content
     }
 
-# Start server
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
