@@ -72,3 +72,6 @@ If the user asks something unrelated (e.g., capital of a country), respond:
             "error": str(e),
             "session_id": str(request.session_id)
         }
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
