@@ -58,45 +58,32 @@ def get_chat_id_by_phone(phone: str):
     except FileNotFoundError:
         return None
 
-def send_to_telegram_by_phone(phone: str, text: str, image_url: str = None):
-    phone = phone.lstrip("+")  # ✅ Normalize phone just in case
-    print(f"📞 [send_to_telegram_by_phone] Looking up chat_id for phone: {phone}")
-
+def send_to_telegram_by_phone(phone: str, text: str, request_contact: bool = False):
     chat_id = get_chat_id_by_phone(phone)
     if not chat_id:
-        print("❌ [send_to_telegram_by_phone] Chat ID not found for phone:", phone)
+        print(f"❌ Chat ID not found for phone: {phone}")
         return
 
-    print(f"✅ [send_to_telegram_by_phone] Sending to chat_id: {chat_id}")
-    print(f"💬 [send_to_telegram_by_phone] Message: {text}")
+    # Send plain text or send "Share Phone Number" button
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+    }
 
-    if image_url:
-        print(f"🖼️ [send_to_telegram_by_phone] Sending with image: {image_url}")
-        # Send image with caption
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-        payload = {
-            "chat_id": chat_id,
-            "caption": text,
-            "parse_mode": "Markdown"
+    if request_contact:
+        keyboard = {
+            "keyboard": [[{
+                "text": "📱 Share Phone Number",
+                "request_contact": True
+            }]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
         }
-        try:
-            files = {"photo": requests.get(image_url).content}
-            requests.post(url, data=payload, files=files)
-        except Exception as e:
-            print(f"❌ [send_to_telegram_by_phone] Failed to send image: {e}")
-    else:
-        # Send plain text
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown"
-        }
-        try:
-            response = requests.post(url, json=payload)
-            print(f"📤 [send_to_telegram_by_phone] Telegram response: {response.status_code}")
-        except Exception as e:
-            print(f"❌ [send_to_telegram_by_phone] Failed to send message: {e}")
+        payload["reply_markup"] = keyboard
+
+    requests.post(url, json=payload)
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -155,6 +142,9 @@ async def chat_endpoint(request: ChatRequest):
             messages=session_messages
         )
         reply = chat_completion.choices[0].message.content
+        if request.phone:  # If we received a phone number in the web chat
+            print(f"📲 Prompting user {request.phone} for phone number sharing on Telegram.")
+            send_to_telegram_by_phone(request.phone, "Please tap the button below to share your phone number with the bot.", True)
         send_to_telegram_by_phone(request.phone, reply)
 
         # Extract Markdown links like [Explore Zamalek](https://...)
@@ -169,16 +159,6 @@ async def chat_endpoint(request: ChatRequest):
         # Send links to Telegram as individual messages
         for link in all_links:
             send_to_telegram_by_phone(request.phone, link)
-
-        # OPTIONAL: Get user's phone from somewhere (e.g., request payload or session)
-        user_phone = request.phone  # <-- Replace with dynamic logic later
-
-        # Extract Airbnb image URL if you have one
-        # You could use regex or LLM tools to parse it, for now just assume none
-        image_url = None  # or provide a real URL if generated
-
-        # Send the reply to Telegram
-        send_to_telegram_by_phone(user_phone, reply, image_url)
 
         session_messages.append({"role": "assistant", "content": reply})
 
