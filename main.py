@@ -245,6 +245,12 @@ async def telegram_webhook(req: Request):
     print("🤷 Message did not match any handled type")
     return {"status": "ignored"}
 
+@app.post("/check-phone")
+async def check_phone(request: Request):
+    body = await request.json()
+    phone = body.get("phone", "").lstrip("+")
+    chat_id = get_chat_id_by_phone(phone)
+    return {"linked": bool(chat_id)}
 
 if __name__ == "__main__":
     import uvicorn
