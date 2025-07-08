@@ -197,12 +197,17 @@ async def chat_endpoint(request: ChatRequest):
 @app.post("/telegram-webhook")
 async def telegram_webhook(req: Request):
     data = await req.json()
+    print("📥 Telegram webhook triggered!")
+    print("📦 Incoming data:", json.dumps(data, indent=2))
+
     message = data.get("message", {})
 
     # Handle /start command
     if "text" in message and message["text"] == "/start":
         chat_id = message["chat"]["id"]
-        
+
+        print(f"🚀 /start command received from chat_id: {chat_id}")
+
         welcome_msg = (
             "👋 Welcome to the Vacation Assistant!\n\n"
             "Please tap the button below to share your phone number. Once you do, "
@@ -218,18 +223,24 @@ async def telegram_webhook(req: Request):
             "one_time_keyboard": True
         }
 
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": welcome_msg,
-            "reply_markup": keyboard
-        })
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": welcome_msg,
+                "reply_markup": keyboard
+            }
+        )
 
+        print("📤 Sent /start reply:", resp.status_code, resp.text)
         return {"status": "start_sent"}
 
-    # ✅ Handle contact sharing and save phone → chat_id
+    # Handle contact sharing
     if "contact" in message:
-        phone = message["contact"]["phone_number"].lstrip("+")  # normalize phone
+        phone = message["contact"]["phone_number"].lstrip("+")
         chat_id = message["chat"]["id"]
+
+        print(f"📲 Contact shared: phone={phone}, chat_id={chat_id}")
 
         try:
             with open("chat_id_store.json", "r") as f:
@@ -244,7 +255,6 @@ async def telegram_webhook(req: Request):
 
         print(f"✅ Saved phone {phone} → chat_id {chat_id}")
 
-        # Send confirmation
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={
             "chat_id": chat_id,
             "text": "✅ You’re now linked! You’ll receive hotel links here when you use the assistant on the website.",
@@ -252,7 +262,9 @@ async def telegram_webhook(req: Request):
 
         return {"status": "linked"}
 
+    print("🤷 Message did not match any handled type")
     return {"status": "ignored"}
+
 
 if __name__ == "__main__":
     import uvicorn
