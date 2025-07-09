@@ -106,8 +106,7 @@ async def chat_endpoint(request: ChatRequest):
                 1. Greet them and acknowledge their destination and dates.
                 2. Recommend 2–3 popular areas in that city/country, with a short description for each.
                 3. Generate a clickable Markdown Airbnb link for each area using this format:
-                    [Explore Zamalek](https://www.airbnb.com/s/Cairo--Zamalek/homes?checkin=2025-07-12&checkout=2025-07-15&adults=2&children=0&infants=0)
-
+                [Explore Zamalek](https://www.airbnb.com/s/Cairo--Zamalek/homes?checkin=2025-07-12&checkout=2025-07-15&adults=2&children=0&infants=0)
 
                 Your task:
                 - Extract:
